@@ -978,8 +978,9 @@ function update() {
   const tz1 = getCachedOffset(c1.zone, viewMs);
   const tz2 = getCachedOffset(c2.zone, viewMs);
   const tzDiff = Math.abs(tz1 - tz2);
-  const tzDiffH = Math.floor(tzDiff);
-  const tzDiffM = Math.round((tzDiff - tzDiffH) * 60);
+  let tzDiffH = Math.floor(tzDiff);
+  let tzDiffM = Math.round((tzDiff - tzDiffH) * 60);
+  if (tzDiffM === 60) { tzDiffH += 1; tzDiffM = 0; } // prevent "15h 60m"
   const tzDiffStr = tzDiff === 0 ? 'Same timezone'
     : tzDiffM > 0 ? `${tzDiffH}h ${tzDiffM}m apart` : `${tzDiffH}h apart`;
   document.getElementById('tz-diff').textContent = tzDiffStr;
