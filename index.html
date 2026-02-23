@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Daylight — Two Cities</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a0e1a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Daylight">
+<link rel="apple-touch-icon" href="icon-192.png">
+
+<!-- SEO / share -->
+<meta name="description" content="Visualize daylight and time across two cities anywhere in the world.">
+<meta property="og:title" content="Daylight — Two Cities">
+<meta property="og:description" content="Visualize daylight and time across two cities anywhere in the world.">
+<meta property="og:type" content="website">
+
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --night: #0a0e1a;
+    --deep: #111827;
+    --dawn: #1e2d4a;
+    --gold: #f5a623;
+    --silver: #c8d6e8;
+    --soft: rgba(255,255,255,0.06);
+    --border: rgba(255,255,255,0.08);
+  }
+
+  body {
+    font-family: 'DM Mono', monospace;
+    background: var(--night);
+    color: #e8edf5;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  header {
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  header h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.1rem;
+    letter-spacing: 0.02em;
+    color: var(--silver);
+  }
+
+  #shared-info {
+    font-size: 0.68rem;
+    color: rgba(200,214,232,0.5);
+    letter-spacing: 0.05em;
+    text-align: right;
+  }
+
+  #shared-info span { color: var(--gold); }
+
+  /* City panels */
+  #cities {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .city-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+    transition: background 1.2s ease;
+  }
+
+  .city-panel:first-child { border-bottom: 1px solid var(--border); }
+
+  .city-panel.is-day { background: linear-gradient(135deg, #1a3a6b 0%, #0e2547 100%); }
+  .city-panel.is-night { background: linear-gradient(135deg, #06090f 0%, #0d1526 100%); }
+  .city-panel.is-golden { background: linear-gradient(135deg, #2d1e08 0%, #1a1208 100%); }
+
+  /* Arc canvas */
+  .arc-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+  }
+
+  /* City controls */
+  /* ── Custom city dropdown ── */
+  .city-top {
+    position: relative;
+    z-index: 100;
+    padding: 10px 20px 6px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .city-select-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .city-label {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.4rem;
+    color: #fff;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.6);
+    line-height: 1;
+    transition: opacity 0.15s;
+  }
+
+  .city-chevron {
+    font-size: 0.65rem;
+    color: rgba(255,255,255,0.3);
+    margin-left: 6px;
+    margin-top: 5px;
+    transition: color 0.2s, transform 0.25s;
+    line-height: 1;
+  }
+
+  .city-select-wrap:hover .city-chevron { color: rgba(255,255,255,0.7); }
+  .city-select-wrap:hover .city-label { opacity: 0.85; }
+  .city-select-wrap.open .city-chevron {
+    transform: rotate(180deg);
+    color: var(--gold);
+  }
+
+  /* The custom dropdown panel */
+  .city-dropdown {
+    display: none;
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    width: 260px;
+    max-height: 260px;
+    overflow-y: auto;
+    background: rgba(12, 18, 32, 0.96);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04);
+    z-index: 999;
+    padding: 6px 0;
+    animation: dropIn 0.18s ease;
+  }
+
+  @keyframes dropIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .city-dropdown.open { display: block; }
+
+  /* Scrollbar */
+  .city-dropdown::-webkit-scrollbar { width: 4px; }
+  .city-dropdown::-webkit-scrollbar-track { background: transparent; }
+  .city-dropdown::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+  /* Search box inside dropdown */
+  .dropdown-search-wrap {
+    padding: 8px 10px 6px;
+    position: sticky;
+    top: 0;
+    background: rgba(12, 18, 32, 0.98);
+    z-index: 2;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .dropdown-search {
+    width: 100%;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    color: #e8edf5;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    padding: 5px 10px;
+    outline: none;
+    letter-spacing: 0.03em;
+  }
+
+  .dropdown-search::placeholder { color: rgba(200,214,232,0.3); }
+  .dropdown-search:focus { border-color: rgba(245,166,35,0.4); }
+
+  .dropdown-option {
+    padding: 7px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    cursor: pointer;
+    transition: background 0.1s;
+    gap: 8px;
+  }
+
+  .dropdown-option:hover { background: rgba(255,255,255,0.06); }
+  .dropdown-option.selected { background: rgba(245,166,35,0.1); }
+  .dropdown-option.selected .opt-name { color: var(--gold); }
+
+  .opt-name {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    color: #e8edf5;
+    white-space: nowrap;
+  }
+
+  .opt-tz {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.62rem;
+    color: rgba(200,214,232,0.35);
+    white-space: nowrap;
+  }
+
+
+  /* Stats row */
+  .city-stats {
+    position: relative;
+    z-index: 2;
+    padding: 0 20px 8px;
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .stat-label {
+    font-size: 0.58rem;
+    color: rgba(200,214,232,0.45);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .stat-val {
+    font-size: 0.82rem;
+    color: var(--silver);
+    font-weight: 500;
+  }
+
+  .stat-val.highlight { color: var(--gold); }
+
+  /* Time of day badge */
+  .tod-badge {
+    margin-left: auto;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.15);
+    color: rgba(255,255,255,0.6);
+  }
+
+  /* Slider section */
+  #slider-wrap {
+    flex-shrink: 0;
+    padding: 10px 20px 12px;
+    background: rgba(0,0,0,0.35);
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  #slider-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  #slider-label {
+    font-size: 0.62rem;
+    color: rgba(200,214,232,0.4);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  #time-display-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  #time-input {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.3rem;
+    color: #fff;
+    letter-spacing: 0.04em;
+    background: transparent;
+    border: none;
+    border-bottom: 1.5px solid rgba(255,255,255,0.15);
+    outline: none;
+    width: 110px;
+    text-align: right;
+    cursor: text;
+    transition: border-color 0.2s, color 0.2s;
+    padding-bottom: 1px;
+  }
+
+  #time-input:focus {
+    border-bottom-color: var(--gold);
+    color: var(--gold);
+  }
+
+  #time-input::placeholder {
+    color: rgba(255,255,255,0.35);
+    font-size: 1rem;
+  }
+
+  #input-hint {
+    font-size: 0.58rem;
+    color: rgba(200,214,232,0.28);
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+
+  /* slider track: left of center = past (silver), right = future (gold), center mark = now */
+  #slider-track-wrap {
+    position: relative;
+  }
+
+  #now-marker {
+    position: absolute;
+    top: -5px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    height: 14px;
+    background: rgba(255,255,255,0.25);
+    border-radius: 1px;
+    pointer-events: none;
+  }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(to right,
+      rgba(200,214,232,0.25) 0%,
+      rgba(200,214,232,0.25) 50%,
+      rgba(245,166,35,0.5) 50%,
+      rgba(245,166,35,0.5) var(--pct, 50%),
+      rgba(255,255,255,0.1) var(--pct, 50%),
+      rgba(255,255,255,0.1) 100%
+    );
+    outline: none;
+    cursor: pointer;
+  }
+
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--gold);
+    box-shadow: 0 0 10px rgba(245,166,35,0.6);
+    cursor: pointer;
+    transition: transform 0.1s;
+  }
+
+  input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+
+  #tick-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0 1px;
+  }
+
+  .tick {
+    font-size: 0.55rem;
+    color: rgba(200,214,232,0.3);
+    letter-spacing: 0.04em;
+  }
+
+  /* Stars layer */
+  .stars {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+    z-index: 0;
+    transition: opacity 1.5s ease;
+  }
+
+  .star {
+    position: absolute;
+    background: #fff;
+    border-radius: 50%;
+    animation: twinkle 3s infinite alternate;
+  }
+
+  @keyframes twinkle {
+    from { opacity: 0.3; }
+    to { opacity: 1; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>☀ Daylight</h1>
+  <div id="shared-info">
+    <div>Timezone gap: <span id="tz-diff">—</span></div>
+    <div>Shared daylight: <span id="shared-dl">—</span></div>
+  </div>
+</header>
+
+<div id="cities">
+  <div class="city-panel" id="panel-0">
+    <div class="stars" id="stars-0"></div>
+    <canvas class="arc-canvas" id="canvas-0"></canvas>
+    <div class="city-top">
+      <div class="city-select-wrap" id="wrap-0" onclick="toggleDropdown(0, event)">
+        <div class="city-label" id="name-0">New York</div>
+        <span class="city-chevron">▾</span>
+        <div class="city-dropdown" id="dropdown-0">
+          <div class="dropdown-search-wrap">
+            <input class="dropdown-search" id="search-0" placeholder="Search city…" oninput="filterDropdown(0,this.value)" onclick="event.stopPropagation()">
+          </div>
+          <div class="dropdown-list" id="list-0"></div>
+        </div>
+      </div>
+      <div class="tod-badge" id="badge-0">day</div>
+    </div>
+    <div class="city-stats" id="stats-0"></div>
+  </div>
+
+  <div class="city-panel" id="panel-1">
+    <div class="stars" id="stars-1"></div>
+    <canvas class="arc-canvas" id="canvas-1"></canvas>
+    <div class="city-top">
+      <div class="city-select-wrap" id="wrap-1" onclick="toggleDropdown(1, event)">
+        <div class="city-label" id="name-1">Tokyo</div>
+        <span class="city-chevron">▾</span>
+        <div class="city-dropdown" id="dropdown-1">
+          <div class="dropdown-search-wrap">
+            <input class="dropdown-search" id="search-1" placeholder="Search city…" oninput="filterDropdown(1,this.value)" onclick="event.stopPropagation()">
+          </div>
+          <div class="dropdown-list" id="list-1"></div>
+        </div>
+      </div>
+      <div class="tod-badge" id="badge-1">night</div>
+    </div>
+    <div class="city-stats" id="stats-1"></div>
+  </div>
+</div>
+
+<div id="slider-wrap">
+  <div id="slider-header">
+    <div id="slider-label">Time offset from now</div>
+    <div id="time-display-wrap">
+      <span id="input-hint">e.g. +3h, −1h 30m</span>
+      <input id="time-input" type="text" value="Now" placeholder="+0h"
+        title="Type an offset like +3h, -1h 30m, 2.5, or +90m"
+        onkeydown="if(event.key==='Enter'){this.blur();}"
+        onfocus="if(this.value==='Now')this.value=''"
+        onblur="onTextBlur(this.value)">
+    </div>
+  </div>
+  <div id="slider-track-wrap">
+    <div id="now-marker"></div>
+    <input type="range" id="time-slider" min="-1440" max="1440" value="0" step="1" oninput="onSlider(this.value)">
+  </div>
+  <div id="tick-row">
+    <span class="tick">−24h</span>
+    <span class="tick">−12h</span>
+    <span class="tick">Now</span>
+    <span class="tick">+12h</span>
+    <span class="tick">+24h</span>
+  </div>
+</div>
+
+<script>
+// ---- City database with IANA timezone zones for accurate DST support ----
+const CITIES = [
+  { name: "Accra",           zone: "Africa/Accra",                sr: 6.0,  ss: 18.2 },
+  { name: "Addis Ababa",     zone: "Africa/Addis_Ababa",          sr: 6.4,  ss: 18.6 },
+  { name: "Adelaide",        zone: "Australia/Adelaide",           sr: 6.8,  ss: 20.2 },
+  { name: "Almaty",          zone: "Asia/Almaty",                  sr: 5.3,  ss: 20.3 },
+  { name: "Amsterdam",       zone: "Europe/Amsterdam",             sr: 5.8,  ss: 20.5 },
+  { name: "Anchorage",       zone: "America/Anchorage",            sr: 5.6,  ss: 21.4 },
+  { name: "Apia",            zone: "Pacific/Apia",                 sr: 6.4,  ss: 18.7 },
+  { name: "Athens",          zone: "Europe/Athens",                sr: 6.3,  ss: 20.1 },
+  { name: "Atlanta",         zone: "America/New_York",             sr: 6.6,  ss: 19.9 },
+  { name: "Auckland",        zone: "Pacific/Auckland",             sr: 6.1,  ss: 20.2 },
+  { name: "Azores",          zone: "Atlantic/Azores",              sr: 6.8,  ss: 20.1 },
+  { name: "Baghdad",         zone: "Asia/Baghdad",                 sr: 5.6,  ss: 19.0 },
+  { name: "Baker Island",    zone: "Etc/GMT+12",                   sr: 6.5,  ss: 18.5 },
+  { name: "Baku",            zone: "Asia/Baku",                    sr: 5.6,  ss: 20.1 },
+  { name: "Bangkok",         zone: "Asia/Bangkok",                 sr: 6.0,  ss: 18.3 },
+  { name: "Beijing",         zone: "Asia/Shanghai",                sr: 5.2,  ss: 19.1 },
+  { name: "Berlin",          zone: "Europe/Berlin",                sr: 5.7,  ss: 20.4 },
+  { name: "Bogotá",          zone: "America/Bogota",               sr: 5.9,  ss: 18.1 },
+  { name: "Boston",          zone: "America/New_York",             sr: 6.3,  ss: 19.6 },
+  { name: "Brisbane",        zone: "Australia/Brisbane",           sr: 5.8,  ss: 18.5 },
+  { name: "Brussels",        zone: "Europe/Brussels",              sr: 5.9,  ss: 20.7 },
+  { name: "Bucharest",       zone: "Europe/Bucharest",             sr: 5.5,  ss: 20.3 },
+  { name: "Buenos Aires",    zone: "America/Argentina/Buenos_Aires",sr:7.1,  ss: 19.2 },
+  { name: "Cairo",           zone: "Africa/Cairo",                 sr: 5.8,  ss: 18.9 },
+  { name: "Calgary",         zone: "America/Edmonton",             sr: 5.8,  ss: 21.0 },
+  { name: "Caracas",         zone: "America/Caracas",              sr: 6.3,  ss: 18.5 },
+  { name: "Casablanca",      zone: "Africa/Casablanca",            sr: 6.5,  ss: 19.8 },
+  { name: "Chennai",         zone: "Asia/Kolkata",                 sr: 6.0,  ss: 18.5 },
+  { name: "Chicago",         zone: "America/Chicago",              sr: 6.4,  ss: 19.7 },
+  { name: "Dallas",          zone: "America/Chicago",              sr: 6.5,  ss: 19.8 },
+  { name: "Darwin",          zone: "Australia/Darwin",             sr: 6.1,  ss: 18.5 },
+  { name: "Delhi",           zone: "Asia/Kolkata",                 sr: 5.8,  ss: 19.0 },
+  { name: "Denver",          zone: "America/Denver",               sr: 6.2,  ss: 20.2 },
+  { name: "Dhaka",           zone: "Asia/Dhaka",                   sr: 5.9,  ss: 18.5 },
+  { name: "Doha",            zone: "Asia/Qatar",                   sr: 5.5,  ss: 18.7 },
+  { name: "Dubai",           zone: "Asia/Dubai",                   sr: 5.8,  ss: 19.0 },
+  { name: "Eucla",           zone: "Australia/Eucla",              sr: 6.5,  ss: 19.5 },
+  { name: "Fiji",            zone: "Pacific/Fiji",                 sr: 6.3,  ss: 18.6 },
+  { name: "Guatemala City",  zone: "America/Guatemala",            sr: 6.3,  ss: 18.5 },
+  { name: "Halifax",         zone: "America/Halifax",              sr: 6.1,  ss: 20.2 },
+  { name: "Hanoi",           zone: "Asia/Ho_Chi_Minh",             sr: 5.5,  ss: 18.5 },
+  { name: "Harare",          zone: "Africa/Harare",                sr: 6.1,  ss: 18.3 },
+  { name: "Havana",          zone: "America/Havana",               sr: 6.7,  ss: 19.7 },
+  { name: "Helsinki",        zone: "Europe/Helsinki",              sr: 4.0,  ss: 21.7 },
+  { name: "Ho Chi Minh",     zone: "Asia/Ho_Chi_Minh",             sr: 5.7,  ss: 18.0 },
+  { name: "Hong Kong",       zone: "Asia/Hong_Kong",               sr: 5.9,  ss: 18.8 },
+  { name: "Honolulu",        zone: "Pacific/Honolulu",             sr: 5.9,  ss: 19.3 },
+  { name: "Honiara",         zone: "Pacific/Guadalcanal",          sr: 6.0,  ss: 18.2 },
+  { name: "Islamabad",       zone: "Asia/Karachi",                 sr: 5.8,  ss: 19.5 },
+  { name: "Istanbul",        zone: "Europe/Istanbul",              sr: 6.1,  ss: 20.0 },
+  { name: "Jakarta",         zone: "Asia/Jakarta",                 sr: 5.9,  ss: 18.1 },
+  { name: "Johannesburg",    zone: "Africa/Johannesburg",          sr: 5.9,  ss: 18.2 },
+  { name: "Juneau",          zone: "America/Juneau",               sr: 5.4,  ss: 21.6 },
+  { name: "Kabul",           zone: "Asia/Kabul",                   sr: 5.3,  ss: 19.2 },
+  { name: "Karachi",         zone: "Asia/Karachi",                 sr: 6.2,  ss: 18.8 },
+  { name: "Kathmandu",       zone: "Asia/Kathmandu",               sr: 5.7,  ss: 18.9 },
+  { name: "Kiev",            zone: "Europe/Kiev",                  sr: 4.5,  ss: 20.3 },
+  { name: "Kolkata",         zone: "Asia/Kolkata",                 sr: 5.5,  ss: 18.4 },
+  { name: "Kuala Lumpur",    zone: "Asia/Kuala_Lumpur",            sr: 7.1,  ss: 19.3 },
+  { name: "La Paz",          zone: "America/La_Paz",               sr: 6.4,  ss: 18.6 },
+  { name: "Lagos",           zone: "Africa/Lagos",                 sr: 6.3,  ss: 18.6 },
+  { name: "Las Vegas",       zone: "America/Los_Angeles",          sr: 6.1,  ss: 19.8 },
+  { name: "Lima",            zone: "America/Lima",                 sr: 6.2,  ss: 18.3 },
+  { name: "Lisbon",          zone: "Europe/Lisbon",                sr: 6.8,  ss: 20.5 },
+  { name: "London",          zone: "Europe/London",                sr: 5.9,  ss: 20.3 },
+  { name: "Lord Howe Is.",   zone: "Australia/Lord_Howe",          sr: 6.3,  ss: 19.8 },
+  { name: "Los Angeles",     zone: "America/Los_Angeles",          sr: 6.2,  ss: 19.9 },
+  { name: "Madrid",          zone: "Europe/Madrid",                sr: 6.9,  ss: 20.8 },
+  { name: "Manila",          zone: "Asia/Manila",                  sr: 5.8,  ss: 18.2 },
+  { name: "Melbourne",       zone: "Australia/Melbourne",          sr: 6.2,  ss: 20.0 },
+  { name: "Mexico City",     zone: "America/Mexico_City",          sr: 6.8,  ss: 19.5 },
+  { name: "Miami",           zone: "America/New_York",             sr: 6.7,  ss: 19.9 },
+  { name: "Montevideo",      zone: "America/Montevideo",           sr: 7.0,  ss: 19.1 },
+  { name: "Moscow",          zone: "Europe/Moscow",                sr: 4.0,  ss: 20.5 },
+  { name: "Mumbai",          zone: "Asia/Kolkata",                 sr: 6.0,  ss: 18.6 },
+  { name: "Muscat",          zone: "Asia/Muscat",                  sr: 5.6,  ss: 18.8 },
+  { name: "Nairobi",         zone: "Africa/Nairobi",               sr: 6.2,  ss: 18.5 },
+  { name: "New York",        zone: "America/New_York",             sr: 6.5,  ss: 19.8 },
+  { name: "Noumea",          zone: "Pacific/Noumea",               sr: 6.2,  ss: 18.8 },
+  { name: "Novosibirsk",     zone: "Asia/Novosibirsk",             sr: 4.8,  ss: 21.0 },
+  { name: "Nuku'alofa",      zone: "Pacific/Tongatapu",            sr: 6.5,  ss: 18.8 },
+  { name: "Oslo",            zone: "Europe/Oslo",                  sr: 4.3,  ss: 21.8 },
+  { name: "Papeete",         zone: "Pacific/Tahiti",               sr: 6.1,  ss: 18.8 },
+  { name: "Paris",           zone: "Europe/Paris",                 sr: 6.2,  ss: 20.6 },
+  { name: "Perth",           zone: "Australia/Perth",              sr: 6.5,  ss: 19.7 },
+  { name: "Phoenix",         zone: "America/Phoenix",              sr: 6.0,  ss: 19.3 },
+  { name: "Port Moresby",    zone: "Pacific/Port_Moresby",         sr: 6.1,  ss: 18.3 },
+  { name: "Pyongyang",       zone: "Asia/Pyongyang",               sr: 5.4,  ss: 19.1 },
+  { name: "Reykjavik",       zone: "Atlantic/Reykjavik",           sr: 4.5,  ss: 22.5 },
+  { name: "Rio de Janeiro",  zone: "America/Sao_Paulo",            sr: 6.0,  ss: 18.3 },
+  { name: "Riyadh",          zone: "Asia/Riyadh",                  sr: 5.7,  ss: 18.5 },
+  { name: "Rome",            zone: "Europe/Rome",                  sr: 6.4,  ss: 20.2 },
+  { name: "Salt Lake City",  zone: "America/Denver",               sr: 6.3,  ss: 20.3 },
+  { name: "Santiago",        zone: "America/Santiago",             sr: 7.2,  ss: 19.5 },
+  { name: "São Paulo",       zone: "America/Sao_Paulo",            sr: 6.1,  ss: 18.4 },
+  { name: "Seattle",         zone: "America/Los_Angeles",          sr: 5.8,  ss: 20.5 },
+  { name: "Seoul",           zone: "Asia/Seoul",                   sr: 5.3,  ss: 19.0 },
+  { name: "Shanghai",        zone: "Asia/Shanghai",                sr: 5.5,  ss: 18.7 },
+  { name: "Singapore",       zone: "Asia/Singapore",               sr: 7.0,  ss: 19.1 },
+  { name: "Stockholm",       zone: "Europe/Stockholm",             sr: 4.1,  ss: 21.5 },
+  { name: "Suva",            zone: "Pacific/Fiji",                 sr: 6.3,  ss: 18.5 },
+  { name: "Sydney",          zone: "Australia/Sydney",             sr: 6.0,  ss: 19.8 },
+  { name: "Taipei",          zone: "Asia/Taipei",                  sr: 5.7,  ss: 18.6 },
+  { name: "Tashkent",        zone: "Asia/Tashkent",                sr: 5.4,  ss: 20.0 },
+  { name: "Tbilisi",         zone: "Asia/Tbilisi",                 sr: 5.7,  ss: 20.2 },
+  { name: "Tehran",          zone: "Asia/Tehran",                  sr: 5.5,  ss: 19.3 },
+  { name: "Tijuana",         zone: "America/Tijuana",              sr: 6.4,  ss: 19.7 },
+  { name: "Tokyo",           zone: "Asia/Tokyo",                   sr: 5.0,  ss: 18.7 },
+  { name: "Toronto",         zone: "America/Toronto",              sr: 6.5,  ss: 19.8 },
+  { name: "Ulaanbaatar",     zone: "Asia/Ulaanbaatar",             sr: 5.0,  ss: 20.5 },
+  { name: "Vancouver",       zone: "America/Vancouver",            sr: 6.3,  ss: 20.1 },
+  { name: "Vienna",          zone: "Europe/Vienna",                sr: 5.9,  ss: 20.5 },
+  { name: "Vladivostok",     zone: "Asia/Vladivostok",             sr: 4.8,  ss: 19.9 },
+  { name: "Warsaw",          zone: "Europe/Warsaw",                sr: 4.8,  ss: 20.4 },
+  { name: "Winnipeg",        zone: "America/Winnipeg",             sr: 5.9,  ss: 21.1 },
+  { name: "Yakutsk",         zone: "Asia/Yakutsk",                 sr: 4.2,  ss: 21.8 },
+  { name: "Yangon",          zone: "Asia/Rangoon",                 sr: 5.8,  ss: 18.2 },
+  { name: "Zurich",          zone: "Europe/Zurich",                sr: 6.0,  ss: 20.6 },
+];
+
+// ---- DST-aware timezone offset using browser's Intl engine ----
+// Returns the current UTC offset in hours for a given IANA zone
+function getTzOffset(zone, dateMs) {
+  try {
+    // Intl gives us the local time parts — compare to UTC to get offset
+    const utcParts  = new Intl.DateTimeFormat('en', {
+      timeZone: 'UTC', hour: 'numeric', minute: 'numeric', hour12: false
+    }).formatToParts(new Date(dateMs));
+    const zoneParts = new Intl.DateTimeFormat('en', {
+      timeZone: zone, hour: 'numeric', minute: 'numeric', hour12: false
+    }).formatToParts(new Date(dateMs));
+
+    const toH = parts => {
+      const h = parseInt(parts.find(p => p.type === 'hour').value);
+      const m = parseInt(parts.find(p => p.type === 'minute').value);
+      return h + m / 60;
+    };
+
+    let diff = toH(zoneParts) - toH(utcParts);
+    // Handle midnight wrap-around
+    if (diff > 14)  diff -= 24;
+    if (diff < -12) diff += 24;
+    return diff;
+  } catch {
+    // Fallback: use the static tz field if zone lookup fails
+    return 0;
+  }
+}
+
+// Cached offsets — refresh every minute so DST transitions are noticed
+let tzCache = {};
+let tzCacheTime = 0;
+function getCachedOffset(zone, nowMs) {
+  if (nowMs - tzCacheTime > 60000) { tzCache = {}; tzCacheTime = nowMs; }
+  if (!(zone in tzCache)) tzCache[zone] = getTzOffset(zone, nowMs);
+  return tzCache[zone];
+}
+
+// Helper: readable UTC label for a zone at current time
+function tzLabel(zone, nowMs) {
+  const off = getCachedOffset(zone, nowMs);
+  const sign = off >= 0 ? '+' : '−';
+  const absOff = Math.abs(off);
+  const h = Math.floor(absOff);
+  const m = Math.round((absOff - h) * 60);
+  return m === 0 ? `UTC${sign}${h}` : `UTC${sign}${h}:${String(m).padStart(2,'0')}`;
+}
+
+
+// Find indices by name for defaults
+function cityIndex(name) { return CITIES.findIndex(c => c.name === name); }
+let selected = [cityIndex("New York"), cityIndex("Tokyo")];
+let offsetMinutes = 0;
+
+// Sort alphabetically for display
+const sortedIndices = CITIES.map((c, i) => i).sort((a, b) => CITIES[a].name.localeCompare(CITIES[b].name));
+
+function renderList(panel, filter = '') {
+  const nowMs = Date.now();
+  const list = document.getElementById(`list-${panel}`);
+  list.innerHTML = '';
+  const q = filter.toLowerCase();
+  sortedIndices.forEach(i => {
+    const c = CITIES[i];
+    if (q && !c.name.toLowerCase().includes(q)) return;
+    const div = document.createElement('div');
+    div.className = 'dropdown-option' + (selected[panel] === i ? ' selected' : '');
+    div.innerHTML = `<span class="opt-name">${c.name}</span><span class="opt-tz">${tzLabel(c.zone, nowMs)}</span>`;
+    div.onclick = (e) => {
+      e.stopPropagation();
+      selected[panel] = i;
+      closeDropdown(panel);
+      update();
+    };
+    list.appendChild(div);
+  });
+}
+
+function toggleDropdown(panel, e) {
+  e.stopPropagation();
+  const wrap = document.getElementById(`wrap-${panel}`);
+  const dd = document.getElementById(`dropdown-${panel}`);
+  const isOpen = dd.classList.contains('open');
+  closeDropdown(0); closeDropdown(1);
+  if (!isOpen) {
+    dd.classList.add('open');
+    wrap.classList.add('open');
+    const search = document.getElementById(`search-${panel}`);
+    search.value = '';
+    renderList(panel, '');
+    setTimeout(() => search.focus(), 50);
+  }
+}
+
+function closeDropdown(panel) {
+  document.getElementById(`dropdown-${panel}`).classList.remove('open');
+  document.getElementById(`wrap-${panel}`).classList.remove('open');
+}
+
+function filterDropdown(panel, val) {
+  renderList(panel, val);
+}
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', () => { closeDropdown(0); closeDropdown(1); });
+
+// Init both lists
+renderList(0); renderList(1);
+
+// Stars generation
+function makeStars(containerId, count) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = '';
+  for (let i = 0; i < count; i++) {
+    const s = document.createElement('div');
+    s.className = 'star';
+    const size = Math.random() * 2 + 0.5;
+    s.style.cssText = `width:${size}px;height:${size}px;top:${Math.random()*100}%;left:${Math.random()*100}%;animation-delay:${Math.random()*3}s;animation-duration:${2+Math.random()*3}s;opacity:${Math.random()*0.6+0.2}`;
+    el.appendChild(s);
+  }
+}
+makeStars('stars-0', 60);
+makeStars('stars-1', 60);
+
+function fmt(h) {
+  const hh = Math.floor(((h % 24) + 24) % 24);
+  const mm = Math.round((h - Math.floor(h)) * 60);
+  return `${String(hh).padStart(2,'0')}:${String(mm < 0 ? 0 : mm).padStart(2,'0')}`;
+}
+
+function fmtOffset(mins) {
+  if (mins === 0) return 'Now';
+  const sign = mins > 0 ? '+' : '−';
+  const abs = Math.abs(mins);
+  const h = Math.floor(abs / 60);
+  const m = abs % 60;
+  return m === 0 ? `${sign}${h}h` : `${sign}${h}h ${m}m`;
+}
+
+function getTodLabel(localH) {
+  const h = ((localH % 24) + 24) % 24;
+  if (h < 5 || h >= 22) return 'night';
+  if (h < 7) return 'dawn';
+  if (h < 19) return 'day';
+  return 'dusk';
+}
+
+function drawArc(canvasId, city, localH) {
+  const canvas = document.getElementById(canvasId);
+  const W = canvas.width = canvas.offsetWidth;
+  const H = canvas.height = canvas.offsetHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  const sr = city.sr;
+  const ss = city.ss;
+  const dayLen = ss - sr;
+  const nightLen = 24 - dayLen;
+
+  // Arc geometry — single upper semicircle for both sun and moon
+  const cx = W / 2;
+  const cy = H * 0.82;
+  const rx = W * 0.42;
+  const ry = H * 0.62;
+
+  // Draw horizon line
+  ctx.save();
+  ctx.beginPath();
+  ctx.setLineDash([4, 8]);
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
+  ctx.moveTo(cx - rx - 20, cy);
+  ctx.lineTo(cx + rx + 20, cy);
+  ctx.stroke();
+  ctx.restore();
+
+  // Draw day arc (upper semicircle, warm glow)
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, Math.PI, 0);
+  ctx.strokeStyle = 'rgba(245,166,35,0.12)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([3, 6]);
+  ctx.stroke();
+  ctx.restore();
+
+  // Sunrise / sunset markers at horizon endpoints
+  const srX = cx - rx;
+  const ssX = cx + rx;
+
+  function drawMarker(x, y, label, align) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(245,166,35,0.7)';
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = '500 10px DM Mono, monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.textAlign = align;
+    ctx.fillText(label, x + (align === 'left' ? 8 : -8), y + 4);
+    ctx.restore();
+  }
+  drawMarker(srX, cy, fmt(sr), 'left');
+  drawMarker(ssX, cy, fmt(ss), 'right');
+
+  const lh = ((localH % 24) + 24) % 24;
+  const isDay = lh >= sr && lh <= ss;
+  let iconPos, angle;
+
+  if (isDay) {
+    // Sun: travels left→right across the upper arc during daytime
+    const t = (lh - sr) / dayLen; // 0..1
+    angle = Math.PI - t * Math.PI; // PI (left) → 0 (right)
+    iconPos = {
+      x: cx + rx * Math.cos(angle),
+      y: cy - ry * Math.sin(angle)
+    };
+  } else {
+    // Moon: also travels the upper arc, but during night hours
+    // Night runs from ss → (midnight) → sr (wrapping around)
+    let nightProgress;
+    if (lh > ss) {
+      // Evening: ss to midnight → 0..0.5
+      nightProgress = (lh - ss) / nightLen;
+    } else {
+      // Early morning: midnight to sr → 0.5..1
+      nightProgress = (lh + (24 - ss)) / nightLen;
+    }
+    // Moon enters from right (ss side) and exits left (sr side), opposite of sun
+    angle = nightProgress * Math.PI; // 0 (right) → PI (left)
+    iconPos = {
+      x: cx + rx * Math.cos(angle),
+      y: cy - ry * Math.sin(angle)
+    };
+  }
+
+  // Glow
+  if (isDay) {
+    const grd = ctx.createRadialGradient(iconPos.x, iconPos.y, 0, iconPos.x, iconPos.y, 40);
+    grd.addColorStop(0, 'rgba(245,166,35,0.28)');
+    grd.addColorStop(1, 'rgba(245,166,35,0)');
+    ctx.beginPath();
+    ctx.arc(iconPos.x, iconPos.y, 40, 0, Math.PI * 2);
+    ctx.fillStyle = grd;
+    ctx.fill();
+  } else {
+    const grd = ctx.createRadialGradient(iconPos.x, iconPos.y, 0, iconPos.x, iconPos.y, 28);
+    grd.addColorStop(0, 'rgba(180,210,255,0.2)');
+    grd.addColorStop(1, 'rgba(180,210,255,0)');
+    ctx.beginPath();
+    ctx.arc(iconPos.x, iconPos.y, 28, 0, Math.PI * 2);
+    ctx.fillStyle = grd;
+    ctx.fill();
+  }
+
+  // Icon
+  ctx.font = isDay ? '22px serif' : '18px serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(isDay ? '☀' : '🌙', iconPos.x, iconPos.y);
+
+  // Local time label near icon
+  ctx.font = '500 11px DM Mono, monospace';
+  ctx.fillStyle = isDay ? 'rgba(255,255,255,0.85)' : 'rgba(200,214,232,0.65)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(fmt(lh), iconPos.x, iconPos.y + 16);
+
+  ctx.restore();
+}
+
+function sharedDaylight(c1, c2, viewMs) {
+  const tz1 = getCachedOffset(c1.zone, viewMs);
+  const tz2 = getCachedOffset(c2.zone, viewMs);
+  const sr1 = (c1.sr - tz1) * 60;
+  const ss1 = (c1.ss - tz1) * 60;
+  const sr2 = (c2.sr - tz2) * 60;
+  const ss2 = (c2.ss - tz2) * 60;
+
+  // Build all daylight intervals for c2 across a 3-day window (-1, 0, +1 day)
+  // to catch cases where one city's day wraps into the next UTC day
+  let totalOverlap = 0;
+  for (const offset of [-1440, 0, 1440]) {
+    const overlapStart = Math.max(sr1, sr2 + offset);
+    const overlapEnd   = Math.min(ss1, ss2 + offset);
+    if (overlapEnd > overlapStart) {
+      totalOverlap += overlapEnd - overlapStart;
+    }
+  }
+
+  if (totalOverlap <= 0) return 'None';
+  const h = Math.floor(totalOverlap / 60);
+  const m = Math.round(totalOverlap % 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function update() {
+  const now = new Date();
+  const nowMs = now.getTime();
+  const utcH = (now.getUTCHours() * 60 + now.getUTCMinutes() + offsetMinutes) / 60;
+  // The actual moment we're viewing (for DST offset lookup)
+  const viewMs = nowMs + offsetMinutes * 60000;
+
+  [0, 1].forEach(p => {
+    const city = CITIES[selected[p]];
+    const tz = getCachedOffset(city.zone, viewMs);
+    const localH = ((utcH + tz) % 24 + 24) % 24;
+    const isDay = localH >= city.sr && localH <= city.ss;
+    const tod = getTodLabel(localH);
+
+    const panel = document.getElementById(`panel-${p}`);
+    panel.className = 'city-panel';
+    if (tod === 'night') panel.classList.add('is-night');
+    else if (tod === 'day') panel.classList.add('is-day');
+    else panel.classList.add('is-golden');
+
+    document.getElementById(`stars-${p}`).style.opacity = isDay ? '0' : '1';
+    document.getElementById(`name-${p}`).textContent = city.name;
+
+    const badge = document.getElementById(`badge-${p}`);
+    badge.textContent = tod;
+    badge.style.color = isDay ? 'rgba(245,210,80,0.9)' : 'rgba(150,180,220,0.7)';
+
+    const tzStr = tzLabel(city.zone, viewMs);
+    const dayLen = city.ss - city.sr;
+    const dh = Math.floor(dayLen), dm = Math.round((dayLen - dh) * 60);
+
+    document.getElementById(`stats-${p}`).innerHTML = `
+      <div class="stat">
+        <div class="stat-label">Local time</div>
+        <div class="stat-val highlight">${fmt(localH)}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Timezone</div>
+        <div class="stat-val">${tzStr}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Sunrise</div>
+        <div class="stat-val">${fmt(city.sr)}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Sunset</div>
+        <div class="stat-val">${fmt(city.ss)}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Daylight</div>
+        <div class="stat-val">${dh}h ${dm}m</div>
+      </div>
+    `;
+
+    drawArc(`canvas-${p}`, city, localH);
+  });
+
+  const c1 = CITIES[selected[0]];
+  const c2 = CITIES[selected[1]];
+  const tz1 = getCachedOffset(c1.zone, viewMs);
+  const tz2 = getCachedOffset(c2.zone, viewMs);
+  const tzDiff = Math.abs(tz1 - tz2);
+  const tzDiffH = Math.floor(tzDiff);
+  const tzDiffM = Math.round((tzDiff - tzDiffH) * 60);
+  const tzDiffStr = tzDiff === 0 ? 'Same timezone'
+    : tzDiffM > 0 ? `${tzDiffH}h ${tzDiffM}m apart` : `${tzDiffH}h apart`;
+  document.getElementById('tz-diff').textContent = tzDiffStr;
+  document.getElementById('shared-dl').textContent = sharedDaylight(c1, c2, viewMs);
+
+  const pct = ((offsetMinutes + 1440) / 2880 * 100).toFixed(2);
+  document.getElementById('time-slider').style.setProperty('--pct', `${pct}%`);
+  document.getElementById('time-input').value = fmtOffset(offsetMinutes);
+}
+
+function onSlider(val) {
+  offsetMinutes = parseInt(val);
+  update();
+}
+
+// Parse typed offset strings like "+3h", "-1h 30m", "+90m", "2h", "-45m", "now"
+function parseOffsetInput(raw) {
+  const s = raw.trim().toLowerCase().replace('−', '-').replace('–', '-');
+  if (!s || s === 'now' || s === '0') return 0;
+
+  let total = 0;
+  const sign = s.startsWith('-') ? -1 : 1;
+  const clean = s.replace(/^[+-]/, '');
+
+  // Match hours and/or minutes in any order: "3h 30m", "90m", "1h", "30"
+  const hMatch = clean.match(/(\d+(?:\.\d+)?)\s*h/);
+  const mMatch = clean.match(/(\d+)\s*m/);
+  // If no unit found, treat plain number as hours
+  const plainMatch = !hMatch && !mMatch && clean.match(/^(\d+(?:\.\d+)?)$/);
+
+  if (hMatch) total += parseFloat(hMatch[1]) * 60;
+  if (mMatch) total += parseInt(mMatch[1]);
+  if (plainMatch) total += parseFloat(plainMatch[1]) * 60;
+
+  const result = Math.round(sign * total);
+  return Math.max(-1440, Math.min(1440, result));
+}
+
+function onTextBlur(val) {
+  const parsed = parseOffsetInput(val);
+  offsetMinutes = isNaN(parsed) ? 0 : parsed;
+  document.getElementById('time-slider').value = offsetMinutes;
+  update(); // update() will set the input value to formatted string
+}
+
+window.addEventListener('resize', update);
+update();
+
+// Register service worker for PWA offline support (skipped in preview/sandbox environments)
+if ('serviceWorker' in navigator && !location.hostname.includes('claudeusercontent')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('service-worker.js')
+      .catch(err => console.log('SW registration skipped:', err));
+  });
+}
+</script>
+</body>
+</html>
