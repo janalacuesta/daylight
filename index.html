@@ -1028,6 +1028,15 @@ if ('serviceWorker' in navigator && !location.hostname.includes('claudeuserconte
       .catch(err => console.log('SW registration skipped:', err));
   });
 }
+
+// Track when someone adds the app to their home screen
+window.addEventListener('appinstalled', () => {
+  console.log('Daylight was added to home screen!');
+  // Drop in your analytics call here when you're ready, e.g.:
+  // gtag('event', 'pwa_install');              // Google Analytics
+  // umami.track('pwa_install');                // Umami
+  // plausible('pwa_install');                  // Plausible
+});
 </script>
 </body>
 </html>
